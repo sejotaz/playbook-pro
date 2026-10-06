@@ -1,0 +1,22 @@
+# Servicios de desarrollo local.
+# Mongo corre como replica set de un nodo (rs0) porque las transacciones
+# (guardar una jugada y su versión a la vez) solo funcionan en replica sets.
+services:
+  mongo:
+    image: mongo:7
+    command: ['--replSet', 'rs0', '--bind_ip_all']
+    ports:
+      - '27017:27017'
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      # Inicia el replica set la primera vez y luego comprueba que responde.
+      test: >
+        mongosh --quiet --eval "try { rs.status().ok } catch (e) { rs.initiate({ _id: 'rs0', members: [{ _id: 0, host: 'localhost:27017' }] }).ok }"
+      interval: 5s
+      timeout: 10s
+      retries: 20
+      start_period: 5s
+
+volumes:
+  mongo-data:
