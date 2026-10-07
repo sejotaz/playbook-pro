@@ -725,9 +725,9 @@ MONGODB_URI=mongodb://localhost:27017/playbookpro?replicaSet=rs0   # local; camb
 MONGODB_DB_NAME=playbookpro   # opcional; nombre de la base de datos (por defecto playbookpro)
 DNS_SERVERS=1.1.1.1,8.8.8.8   # opcional; solo si sale "querySrv ECONNREFUSED" con la URI de Atlas
 JWT_ACCESS_SECRET=   # genera con: openssl rand -base64 48
-JWT_REFRESH_SECRET=  # otro distinto
-JWT_ACCESS_TTL=15m
-JWT_REFRESH_TTL=30d
+# No hay JWT_REFRESH_SECRET: el refresh token es aleatorio y en Mongo solo se guarda su hash.
+JWT_ACCESS_TTL_SECONDS=900    # opcional; duración del access token
+REFRESH_TOKEN_TTL_DAYS=30      # opcional; duración de la sesión
 WEB_ORIGIN=http://localhost:5173
 CLOUDINARY_CLOUD_NAME=
 CLOUDINARY_API_KEY=
@@ -748,7 +748,6 @@ export const EnvSchema = z.object({
   PORT: z.coerce.number().default(3000),
   MONGODB_URI: z.string().startsWith('mongodb'),
   JWT_ACCESS_SECRET: z.string().min(32),
-  JWT_REFRESH_SECRET: z.string().min(32),
   // ...
 });
 export type Env = z.infer<typeof EnvSchema>;

@@ -37,3 +37,9 @@ Abre http://localhost:5173. La pantalla debe decir "API: conectada".
 | `npm run lint`      | Lint (oxlint; prohíbe `any`)          |
 | `npm run typecheck` | Comprobación de tipos                 |
 | `npm run format`    | Formatea con Prettier                 |
+
+## Probar la API
+
+Con `npm run dev` en marcha, abre http://localhost:3000/api/docs (Swagger). Desde ahí puedes
+registrarte (`POST /api/auth/register`), copiar el `accessToken` de la respuesta, pulsar
+**Authorize** y llamar a `GET /api/auth/me`.

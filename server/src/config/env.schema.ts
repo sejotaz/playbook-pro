@@ -21,6 +21,12 @@ export const EnvSchema = z.object({
     .transform((value) => value.split(',').map((server) => server.trim()))
     .pipe(z.array(z.union([z.ipv4(), z.ipv6()])).min(1))
     .optional(),
+  // Firma los access tokens. Quien lo conozca puede entrar como cualquier coach.
+  JWT_ACCESS_SECRET: z
+    .string({ error: 'falta el secreto para firmar los tokens' })
+    .min(32, 'debe tener al menos 32 caracteres aleatorios'),
+  JWT_ACCESS_TTL_SECONDS: z.coerce.number().int().positive().default(900),
+  REFRESH_TOKEN_TTL_DAYS: z.coerce.number().int().positive().default(30),
 });
 
 export type Env = z.infer<typeof EnvSchema>;
