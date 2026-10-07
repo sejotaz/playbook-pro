@@ -2,7 +2,12 @@
   "name": "playbook-pro",
   "private": true,
   "type": "module",
-  "packageManager": "pnpm@10.28.0",
+  "packageManager": "npm@11.7.0",
+  "workspaces": [
+    "shared",
+    "server",
+    "client"
+  ],
   "engines": {
     "node": ">=22"
   },

@@ -24,14 +24,14 @@ Mini glosario de fútbol americano que uso en este documento:
 ```mermaid
 flowchart LR
   subgraph Cliente["Navegador (tablet / desktop)"]
-    WEB["apps/web<br/>React + Vite + TS<br/>Konva · Zustand · TanStack Query<br/>Tailwind + shadcn/ui"]
+    WEB["client<br/>React + Vite + TS<br/>Konva · Zustand · TanStack Query<br/>Tailwind + shadcn/ui"]
   end
 
-  subgraph Shared["packages/shared"]
+  subgraph Shared["shared"]
     ZOD["Esquema Zod del diagram<br/>+ migraciones<br/>+ tipos y enums"]
   end
 
-  subgraph Backend["apps/api · NestJS"]
+  subgraph Backend["server · NestJS"]
     GUARDS["JwtAuthGuard → TeamAccessGuard"]
     MODS["Módulos: auth · users · teams · roster<br/>playbooks · plays · formations"]
     VALID["class-validator (DTOs)<br/>ZodValidationPipe (diagram)"]
@@ -55,7 +55,7 @@ flowchart LR
 
 **Por qué así:**
 
-- **El esquema Zod vive en `packages/shared`** y lo importan los dos lados. El editor valida mientras el coach dibuja y la API vuelve a validar antes de guardar. Una sola fuente de verdad: si cambia la forma de una jugada, se cambia en un solo sitio.
+- **El esquema Zod vive en `shared`** y lo importan los dos lados. El editor valida mientras el coach dibuja y la API vuelve a validar antes de guardar. Una sola fuente de verdad: si cambia la forma de una jugada, se cambia en un solo sitio.
 - **Dos guards en cadena** en cada ruta de equipo: primero "¿estás logueado?" y luego "¿eres coach de este equipo?". Así el filtro por `teamId` no depende de que nadie se acuerde de ponerlo en cada consulta.
 - **Las fotos van directo del navegador a Cloudinary** con una firma que genera la API. El archivo nunca pasa por nuestro servidor (más rápido y más barato) y en Mongo solo queda la URL.
 - **Access token en memoria y refresh token en cookie `httpOnly`**. Si alguien inyecta JavaScript en la página, no puede robar el refresh token.
@@ -89,7 +89,7 @@ Convenciones comunes a todos:
 
 Todos los ids del sistema (el `_id` de cada documento, las referencias entre colecciones y los ids internos del diagram) son **UUIDv7** en lugar del ObjectId de Mongo.
 
-Definición común → `apps/api/src/database/uuid-id.ts`:
+Definición común → `server/src/database/uuid-id.ts`:
 
 ```ts
 import { v7 as uuidv7 } from 'uuid';
@@ -104,7 +104,7 @@ export const UUID_ID = { type: String, default: () => uuidv7() } as const;
 - Los parámetros de URL (`:teamId`, `:playId`...) se validan con un `ParseUuidPipe` (Zod `z.uuid({ version: 'v7' })`) y devuelven 400 si no son UUIDv7.
 - **Cuidado:** un UUIDv7 revela cuándo se creó el documento y es parcialmente predecible. **Nunca se usa como secreto.** Los tokens de `shareLinks` y de refresh son 32 bytes aleatorios (`crypto.randomBytes`), aparte del id.
 
-### 2.1 `users` → `apps/api/src/modules/users/schemas/user.schema.ts`
+### 2.1 `users` → `server/src/modules/users/schemas/user.schema.ts`
 
 ```ts
 @Schema({ collection: 'users', timestamps: true })
@@ -128,7 +128,7 @@ export const UserSchema = SchemaFactory.createForClass(User);
 UserSchema.index({ email: 1 }, { unique: true });
 ```
 
-### 2.2 `refreshTokens` (nueva) → `apps/api/src/modules/auth/schemas/refresh-token.schema.ts`
+### 2.2 `refreshTokens` (nueva) → `server/src/modules/auth/schemas/refresh-token.schema.ts`
 
 ```ts
 @Schema({ collection: 'refreshTokens', timestamps: true })
@@ -156,7 +156,7 @@ RefreshTokenSchema.index({ userId: 1, family: 1 });
 RefreshTokenSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 }); // TTL: Mongo los borra al vencer
 ```
 
-### 2.3 `teams` → `apps/api/src/modules/teams/schemas/team.schema.ts`
+### 2.3 `teams` → `server/src/modules/teams/schemas/team.schema.ts`
 
 ```ts
 @Schema({ _id: false })
@@ -194,7 +194,7 @@ TeamSchema.index({ 'members.userId': 1 }); // "¿de qué equipos soy coach?"
 
 En la Fase 1, quien crea el equipo queda como su primer coach. Cualquier coach del equipo puede añadir a otro coach escribiendo el email de un usuario ya registrado, y también puede quitarlo. Nunca se puede quitar al último coach de un equipo. Las invitaciones por email (para quien aún no tiene cuenta) y el rol de jugador quedan para la Fase 3.
 
-### 2.4 `rosterPlayers` → `apps/api/src/modules/roster/schemas/roster-player.schema.ts`
+### 2.4 `rosterPlayers` → `server/src/modules/roster/schemas/roster-player.schema.ts`
 
 ```ts
 @Schema({ collection: 'rosterPlayers', timestamps: true })
@@ -223,7 +223,7 @@ export class RosterPlayer {
 RosterPlayerSchema.index({ teamId: 1, active: 1, number: 1 });
 ```
 
-### 2.5 `playbooks` → `apps/api/src/modules/playbooks/schemas/playbook.schema.ts`
+### 2.5 `playbooks` → `server/src/modules/playbooks/schemas/playbook.schema.ts`
 
 ```ts
 @Schema({ collection: 'playbooks', timestamps: true })
@@ -249,7 +249,7 @@ export class Playbook {
 PlaybookSchema.index({ teamId: 1, side: 1, deletedAt: 1 });
 ```
 
-### 2.6 `plays` → `apps/api/src/modules/plays/schemas/play.schema.ts`
+### 2.6 `plays` → `server/src/modules/plays/schemas/play.schema.ts`
 
 ```ts
 @Schema({ collection: 'plays', timestamps: true, minimize: false })
@@ -301,7 +301,7 @@ PlaySchema.index({ name: 'text', tags: 'text' }, { default_language: 'none' });
 
 **Por qué `teamId` va primero en los índices:** todas las consultas filtran por equipo, así que el índice separa primero por equipo y luego por lo demás. Además impide que una consulta sin `teamId` sea rápida por accidente.
 
-### 2.7 `playVersions` → `apps/api/src/modules/plays/schemas/play-version.schema.ts`
+### 2.7 `playVersions` → `server/src/modules/plays/schemas/play-version.schema.ts`
 
 ```ts
 @Schema({ collection: 'playVersions', timestamps: { createdAt: true, updatedAt: false } })
@@ -329,7 +329,7 @@ PlayVersionSchema.index({ playId: 1, version: -1 }, { unique: true });
 
 **Ojo con el tamaño:** si guardamos una versión con cada autoguardado del editor, el historial crece muy rápido. Propongo: el editor autoguarda en `plays` (sin versión nueva) y solo se crea una `playVersion` cuando el coach pulsa "Guardar versión", o como mucho una cada 10 minutos de edición. Además conservamos las últimas 50 por jugada.
 
-### 2.8 `formations` → `apps/api/src/modules/formations/schemas/formation.schema.ts`
+### 2.8 `formations` → `server/src/modules/formations/schemas/formation.schema.ts`
 
 ```ts
 @Schema({ _id: false })
@@ -361,7 +361,7 @@ export class Formation {
 FormationSchema.index({ teamId: 1, side: 1, name: 1 }, { unique: true });
 ```
 
-Las formaciones globales se cargan con un **seed** (`apps/api/src/database/seeds/formations.seed.ts`): Shotgun, Pistol, I-Form, Singleback, Empty, 4-3, 3-4, Nickel, Dime, Punt y Kickoff. Al consultar se pide `teamId ∈ [miEquipo, null]`.
+Las formaciones globales se cargan con un **seed** (`server/src/database/seeds/formations.seed.ts`): Shotgun, Pistol, I-Form, Singleback, Empty, 4-3, 3-4, Nickel, Dime, Punt y Kickoff. Al consultar se pide `teamId ∈ [miEquipo, null]`.
 
 ### 2.9 Colecciones que defino ahora pero se implementan después
 
@@ -390,76 +390,74 @@ erDiagram
 
 ```
 playbook-pro/
-├── apps/
-│   ├── api/                              # NestJS
-│   │   ├── src/
-│   │   │   ├── main.ts                   # bootstrap, Swagger, CORS, cookies
-│   │   │   ├── app.module.ts
-│   │   │   ├── config/
-│   │   │   │   ├── env.schema.ts         # Zod: valida MONGODB_URI, JWT_SECRET... al arrancar
-│   │   │   │   └── configuration.ts
-│   │   │   ├── database/
-│   │   │   │   ├── database.module.ts    # MongooseModule.forRootAsync
-│   │   │   │   ├── plugins/soft-delete.plugin.ts
-│   │   │   │   └── seeds/formations.seed.ts
-│   │   │   ├── common/
-│   │   │   │   ├── guards/               # jwt-auth, team-access
-│   │   │   │   ├── decorators/           # @CurrentUser, @Public
-│   │   │   │   ├── pipes/                # ZodValidationPipe, ParseUuidPipe
-│   │   │   │   └── filters/              # mapea errores de Mongo (E11000 → 409)
-│   │   │   └── modules/
-│   │   │       ├── auth/
-│   │   │       │   ├── auth.module.ts
-│   │   │       │   ├── auth.controller.ts
-│   │   │       │   ├── auth.service.ts
-│   │   │       │   ├── strategies/jwt.strategy.ts
-│   │   │       │   ├── schemas/refresh-token.schema.ts
-│   │   │       │   ├── dto/              # register.dto.ts, login.dto.ts
-│   │   │       │   └── auth.service.spec.ts
-│   │   │       ├── users/                # misma forma: module, controller, service, schemas, dto, spec
-│   │   │       ├── teams/
-│   │   │       ├── roster/
-│   │   │       ├── playbooks/
-│   │   │       ├── plays/
-│   │   │       ├── formations/
-│   │   │       └── uploads/              # firma de subidas a Cloudinary
-│   │   ├── test/                         # e2e con mongodb-memory-server (MongoMemoryReplSet)
-│   │   ├── .env.example
-│   │   ├── Dockerfile
-│   │   └── package.json
-│   └── web/                              # React + Vite
-│       ├── src/
-│       │   ├── main.tsx
-│       │   ├── app/                      # router, providers (QueryClient), layout
-│       │   ├── lib/                      # api client (fetch + refresh), utils
-│       │   ├── components/ui/            # shadcn/ui
-│       │   ├── features/
-│       │   │   ├── auth/
-│       │   │   ├── teams/
-│       │   │   ├── roster/
-│       │   │   ├── playbooks/
-│       │   │   └── editor/               # el corazón del MVP
-│       │   │       ├── canvas/           # FieldLayer, PlayerNode, RouteLine (react-konva)
-│       │   │       ├── store/            # Zustand: editor.store.ts (+ undo/redo)
-│       │   │       ├── tools/            # select, move, draw-route, draw-block
-│       │   │       ├── geometry/         # yardas ⇄ píxeles, snapping a la rejilla
-│       │   │       └── panels/           # barra de herramientas, propiedades del jugador
-│       │   └── routes/
-│       ├── index.html
-│       ├── vite.config.ts
-│       └── package.json
-├── packages/
-│   ├── shared/
-│   │   ├── src/
-│   │   │   ├── index.ts
-│   │   │   ├── enums.ts                  # Position, TeamRole, PlaybookSide...
-│   │   │   ├── diagram/
-│   │   │   │   ├── diagram.schema.ts     # esquema Zod (sección 4)
-│   │   │   │   ├── migrations.ts         # migrateDiagram()
-│   │   │   │   └── diagram.schema.spec.ts
-│   │   │   ├── field.ts                  # medidas del campo y hash marks
-│   │   │   └── dto/                      # tipos de request/response compartidos
-│   │   └── package.json                  # "name": "@playbook/shared"
+├── server/                               # NestJS
+│   ├── src/
+│   │   ├── main.ts                   # bootstrap, Swagger, CORS, cookies
+│   │   ├── app.module.ts
+│   │   ├── config/
+│   │   │   ├── env.schema.ts         # Zod: valida MONGODB_URI, JWT_SECRET... al arrancar
+│   │   │   └── configuration.ts
+│   │   ├── database/
+│   │   │   ├── database.module.ts    # MongooseModule.forRootAsync
+│   │   │   ├── plugins/soft-delete.plugin.ts
+│   │   │   └── seeds/formations.seed.ts
+│   │   ├── common/
+│   │   │   ├── guards/               # jwt-auth, team-access
+│   │   │   ├── decorators/           # @CurrentUser, @Public
+│   │   │   ├── pipes/                # ZodValidationPipe, ParseUuidPipe
+│   │   │   └── filters/              # mapea errores de Mongo (E11000 → 409)
+│   │   └── modules/
+│   │       ├── auth/
+│   │       │   ├── auth.module.ts
+│   │       │   ├── auth.controller.ts
+│   │       │   ├── auth.service.ts
+│   │       │   ├── strategies/jwt.strategy.ts
+│   │       │   ├── schemas/refresh-token.schema.ts
+│   │       │   ├── dto/              # register.dto.ts, login.dto.ts
+│   │       │   └── auth.service.spec.ts
+│   │       ├── users/                # misma forma: module, controller, service, schemas, dto, spec
+│   │       ├── teams/
+│   │       ├── roster/
+│   │       ├── playbooks/
+│   │       ├── plays/
+│   │       ├── formations/
+│   │       └── uploads/              # firma de subidas a Cloudinary
+│   ├── test/                         # e2e con mongodb-memory-server (MongoMemoryReplSet)
+│   ├── .env.example
+│   ├── Dockerfile
+│   └── package.json
+├── client/                               # React + Vite
+│   ├── src/
+│   │   ├── main.tsx
+│   │   ├── app/                      # router, providers (QueryClient), layout
+│   │   ├── lib/                      # api client (fetch + refresh), utils
+│   │   ├── components/ui/            # shadcn/ui
+│   │   ├── features/
+│   │   │   ├── auth/
+│   │   │   ├── teams/
+│   │   │   ├── roster/
+│   │   │   ├── playbooks/
+│   │   │   └── editor/               # el corazón del MVP
+│   │   │       ├── canvas/           # FieldLayer, PlayerNode, RouteLine (react-konva)
+│   │   │       ├── store/            # Zustand: editor.store.ts (+ undo/redo)
+│   │   │       ├── tools/            # select, move, draw-route, draw-block
+│   │   │       ├── geometry/         # yardas ⇄ píxeles, snapping a la rejilla
+│   │   │       └── panels/           # barra de herramientas, propiedades del jugador
+│   │   └── routes/
+│   ├── index.html
+│   ├── vite.config.ts
+│   └── package.json
+├── shared/
+│   ├── src/
+│   │   ├── index.ts
+│   │   ├── enums.ts                  # Position, TeamRole, PlaybookSide...
+│   │   ├── diagram/
+│   │   │   ├── diagram.schema.ts     # esquema Zod (sección 4)
+│   │   │   ├── migrations.ts         # migrateDiagram()
+│   │   │   └── diagram.schema.spec.ts
+│   │   ├── field.ts                  # medidas del campo y hash marks
+│   │   └── dto/                      # tipos de request/response compartidos
+│   └── package.json                  # "name": "@playbook/shared"
 ├── docs/
 │   ├── architecture.md
 │   └── decisions/                        # un archivo corto por decisión importante (ADR)
@@ -467,21 +465,21 @@ playbook-pro/
 │   ├── agents/                           # subagentes del proyecto (sección 6)
 │   └── skills/                           # skills del proyecto (sección 6)
 ├── CLAUDE.md                             # reglas del proyecto para Claude
-├── docker-compose.yml                    # mongo (replica set); api y web corren con pnpm dev
+├── docker-compose.yml                    # mongo (replica set); api y web corren con npm run dev
 ├── turbo.json
-├── pnpm-workspace.yaml
-├── package.json
+├── package-lock.json
+├── package.json                          # workspaces de npm: shared, server, client
 ├── .oxlintrc.json                        # lint (oxlint), con no-explicit-any como error
 ├── tsconfig.base.json                    # TypeScript estricto compartido
 ├── .prettierrc
 └── .gitignore                            # .env incluido
 ```
 
-Una nota sobre `packages/shared`: **solo contiene código que funciona en el navegador y en Node** (Zod, tipos, constantes). Nada de Mongoose ni de NestJS ahí, o el frontend acabaría arrastrando dependencias del servidor.
+Una nota sobre `shared`: **solo contiene código que funciona en el navegador y en Node** (Zod, tipos, constantes). Nada de Mongoose ni de NestJS ahí, o el frontend acabaría arrastrando dependencias del servidor.
 
 ---
 
-## 4. Esquema Zod del diagram → `packages/shared/src/diagram/diagram.schema.ts`
+## 4. Esquema Zod del diagram → `shared/src/diagram/diagram.schema.ts`
 
 **Sistema de coordenadas (lo más importante de todo el proyecto):**
 
@@ -671,7 +669,7 @@ export type DiagramPlayer = z.infer<typeof DiagramPlayerSchema>;
 - **Límites (`max`) en todo.** Protegen contra documentos gigantes (por error o a propósito) y mantienen las jugadas pequeñas como pediste.
 - **`timeline.keyframes` son marcas con nombre** ("Snap", "Throw"). Las posiciones intermedias salen de interpolar las rutas, que es lo que acordamos para la animación.
 
-**Migraciones** → `packages/shared/src/diagram/migrations.ts`:
+**Migraciones** → `shared/src/diagram/migrations.ts`:
 
 ```ts
 type Migration = (input: Record<string, unknown>) => Record<string, unknown>;
@@ -718,12 +716,14 @@ La API aplica `migrateDiagram` al **leer** cada jugada (migración perezosa) y l
 
 Límites del M0 a tener en cuenta: 512 MB de almacenamiento (sobra para miles de jugadas, porque no guardamos imágenes) y rendimiento compartido. Es suficiente para el MVP y para las primeras pruebas con tu equipo.
 
-### 5.2 Variables de entorno → `apps/api/.env` (nunca se sube a git)
+### 5.2 Variables de entorno → `server/.env` (nunca se sube a git)
 
 ```bash
 NODE_ENV=development
 PORT=3000
 MONGODB_URI=mongodb://localhost:27017/playbookpro?replicaSet=rs0   # local; cambia a la de Atlas para usar la nube
+MONGODB_DB_NAME=playbookpro   # opcional; nombre de la base de datos (por defecto playbookpro)
+DNS_SERVERS=1.1.1.1,8.8.8.8   # opcional; solo si sale "querySrv ECONNREFUSED" con la URI de Atlas
 JWT_ACCESS_SECRET=   # genera con: openssl rand -base64 48
 JWT_REFRESH_SECRET=  # otro distinto
 JWT_ACCESS_TTL=15m
@@ -734,13 +734,13 @@ CLOUDINARY_API_KEY=
 CLOUDINARY_API_SECRET=
 ```
 
-En el repo solo va `apps/api/.env.example` con las claves vacías.
+En el repo solo va `server/.env.example` con las claves vacías.
 
 ### 5.3 Conexión en NestJS
 
-Dependencias: `pnpm --filter @playbook/api add @nestjs/mongoose mongoose`
+Dependencias: `npm install -w server @nestjs/mongoose mongoose`
 
-`apps/api/src/config/env.schema.ts` — si falta una variable, la API **no arranca** y te dice cuál:
+`server/src/config/env.schema.ts` — si falta una variable, la API **no arranca** y te dice cuál:
 
 ```ts
 export const EnvSchema = z.object({
@@ -754,7 +754,7 @@ export const EnvSchema = z.object({
 export type Env = z.infer<typeof EnvSchema>;
 ```
 
-`apps/api/src/database/database.module.ts`:
+`server/src/database/database.module.ts`:
 
 ```ts
 @Module({
@@ -772,9 +772,9 @@ export type Env = z.infer<typeof EnvSchema>;
 export class DatabaseModule {}
 ```
 
-**Por qué `autoIndex` solo fuera de producción:** al arrancar, Mongoose crea los índices que falten. En desarrollo es cómodo; en producción, crear un índice sobre una colección grande puede frenar la base de datos, así que allí los creamos con un script controlado (`pnpm --filter api db:sync-indexes`).
+**Por qué `autoIndex` solo fuera de producción:** al arrancar, Mongoose crea los índices que falten. En desarrollo es cómodo; en producción, crear un índice sobre una colección grande puede frenar la base de datos, así que allí los creamos con un script controlado (`npm run db:sync-indexes -w server`).
 
-`apps/api/src/app.module.ts`:
+`server/src/app.module.ts`:
 
 ```ts
 @Module({
@@ -815,7 +815,7 @@ volumes:
 ### 5.5 Comprobar que funciona
 
 1. `docker compose up -d mongo`
-2. `pnpm --filter api dev`
+2. `npm run dev -w server`
 3. En la consola debe aparecer `Nest application successfully started` sin errores de Mongoose.
 4. `GET http://localhost:3000/api/health` devuelve el estado de la API y, desde el bloque 1, también el de la base de datos.
 5. Para probar contra Atlas: cambia `MONGODB_URI` por la URI del paso 5.1.6 y repite. En Atlas → _Browse Collections_ verás aparecer las colecciones en cuanto se cree el primer usuario.
@@ -853,7 +853,7 @@ Las skills son "recetas" que se ejecutan siempre igual.
 - **`nuevo-modulo`**: checklist y plantillas para crear un módulo; la usa el agente `nest-module-builder`.
 - **`cambio-de-esquema-diagram`**: pasos fijos para subir la versión del diagram, escribir la migración y su test.
 - **`seed-formaciones`**: añadir una formación global con sus coordenadas correctas.
-- **`session-start-hook`** (ya disponible): hace que cada sesión en la nube instale pnpm y las dependencias, para que Claude pueda ejecutar tests y lint siempre.
+- **`session-start-hook`** (ya disponible): hace que cada sesión en la nube instale las dependencias con npm, para que Claude pueda ejecutar tests y lint siempre.
 - **`/code-review` y `/security-review`** (ya disponibles): revisión automática de cada PR.
 
 Además, un **`CLAUDE.md`** en la raíz con tus reglas de trabajo (sin `any`, `teamId` en todo, Swagger, español...) para que cualquier sesión las cumpla sin tener que repetirlas.
@@ -866,7 +866,7 @@ Cuando des el OK y conectes el repo, el primer PR del bloque 0 incluye `CLAUDE.m
 
 | Bloque                               | Qué incluye                                                                                                               | Cómo lo pruebas                                              |
 | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
-| **0. Setup**                         | Monorepo pnpm + Turborepo, oxlint/Prettier, `packages/shared` con Zod, docker-compose, `CLAUDE.md`, CI en GitHub Actions  | `pnpm dev` levanta api y web; la CI pasa en verde            |
+| **0. Setup**                         | Monorepo npm + Turborepo, oxlint/Prettier, `shared` con Zod, docker-compose, `CLAUDE.md`, CI en GitHub Actions            | `npm run dev` levanta api y web; la CI pasa en verde         |
 | **1. Base de datos y auth**          | Conexión a Mongo, `/health`, register/login/refresh/logout, Swagger                                                       | Te registras y haces login desde Swagger                     |
 | **2. Teams y roster**                | Crear equipo, añadir y quitar coaches, CRUD del roster con foto (Cloudinary)                                              | Creas tu equipo y cargas jugadores con foto                  |
 | **3. Playbooks, plays y formations** | CRUD, duplicar jugada, versiones, seed de formaciones globales                                                            | Creas un playbook y una jugada desde Swagger                 |
