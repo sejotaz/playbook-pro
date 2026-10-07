@@ -1,0 +1,22 @@
+import 'reflect-metadata';
+import { ConfigService } from '@nestjs/config';
+import { NestFactory } from '@nestjs/core';
+import { AppModule } from './app.module.js';
+import { configureApp, setupSwagger } from './app.setup.js';
+import type { Env } from './config/env.schema.js';
+
+async function bootstrap(): Promise<void> {
+  const app = await NestFactory.create(AppModule);
+  const config = app.get<ConfigService<Env, true>>(ConfigService);
+
+  configureApp(app);
+  if (config.get('NODE_ENV', { infer: true }) !== 'production') {
+    setupSwagger(app);
+  }
+  app.enableCors({ origin: config.get('WEB_ORIGIN', { infer: true }), credentials: true });
+  app.enableShutdownHooks();
+
+  await app.listen(config.get('PORT', { infer: true }));
+}
+
+await bootstrap();
